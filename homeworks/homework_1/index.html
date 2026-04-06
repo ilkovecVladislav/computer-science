@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Encoder / Decoder</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      input[type="text"] {
+        width: 100%;
+        padding: 10px;
+        margin-top: 10px;
+        font-size: 16px;
+      }
+
+      .radio-group {
+        margin-top: 15px;
+      }
+
+      .radio-group label {
+        margin-right: 15px;
+        cursor: pointer;
+      }
+
+      .result {
+        margin-top: 20px;
+        padding: 10px;
+        background: #f3f3f3;
+        min-height: 50px;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Кодировщик / Декодировщик</h2>
+
+    <input id="input" type="text" placeholder="Введите текст..." />
+
+    <div class="radio-group">
+      <label>
+        <input type="radio" name="mode" value="encode" checked />
+        Кодировать
+      </label>
+
+      <label>
+        <input type="radio" name="mode" value="decode" />
+        Декодировать
+      </label>
+    </div>
+
+    <div class="result" id="output"></div>
+
+    <script>
+      const ALPHABET = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+      const SPECIALS = [" ", ".", ",", "!", "?", ":", "-"];
+
+      function encode(text) {
+        const bits = [];
+
+        for (const char of text) {
+          if (/[а-яё]/i.test(char)) {
+            const isUpper = char === char.toUpperCase() ? "1" : "0";
+            const index = ALPHABET.indexOf(char.toLowerCase());
+            bits.push("1" + isUpper + index.toString(2).padStart(6, "0"));
+          } else if (/\d/.test(char)) {
+            bits.push("00" + parseInt(char).toString(2).padStart(4, "0"));
+          } else {
+            const specIndex = SPECIALS.indexOf(char);
+            if (specIndex !== -1) {
+              bits.push("01" + specIndex.toString(2).padStart(4, "0"));
+            }
+          }
+        }
+
+        return bits.join(" ");
+      }
+
+      function decode(bitStringWithSpaces) {
+        const bitString = bitStringWithSpaces.replace(/\s/g, "");
+        let result = "";
+        let i = 0;
+
+        while (i < bitString.length) {
+          if (bitString[i] === "1") {
+            const isUpper = bitString[i + 1] === "1";
+            const charIndex = parseInt(bitString.substring(i + 2, i + 8), 2);
+            const char = ALPHABET[charIndex];
+            result += isUpper ? char.toUpperCase() : char;
+            i += 8;
+          } else {
+            const type = bitString[i + 1];
+            const data = parseInt(bitString.substring(i + 2, i + 6), 2);
+
+            result += type === "0" ? data : SPECIALS[data];
+            i += 6;
+          }
+        }
+
+        return result;
+      }
+      const input = document.getElementById("input");
+      const output = document.getElementById("output");
+      const radios = document.querySelectorAll('input[name="mode"]');
+
+      function getMode() {
+        return document.querySelector('input[name="mode"]:checked').value;
+      }
+
+      function update() {
+        const value = input.value;
+
+        try {
+          if (getMode() === "decode") {
+            output.textContent = decode(value);
+          } else {
+            output.textContent = encode(value);
+          }
+        } catch (e) {
+          output.textContent = "Ошибка обработки";
+        }
+      }
+
+      input.addEventListener("input", update);
+      radios.forEach((r) => r.addEventListener("change", update));
+    </script>
+  </body>
+</html>
