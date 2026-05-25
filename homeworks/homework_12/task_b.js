@@ -60,6 +60,12 @@ class Pointer {
     this.#memoryManager.freePointer(this);
     this.invalidate();
   }
+
+  [Symbol.dispose]() {
+    if (this.#validStatus) {
+      this.free();
+    }
+  }
 }
 
 class Memory {
@@ -127,7 +133,7 @@ class Memory {
   alloc(length, DataType) {
     const requiredBytes = length * DataType.BYTES_PER_ELEMENT;
     const alignment = DataType.BYTES_PER_ELEMENT;
-    let blockHeaderOffset = this.#heapStart; // Начинаем с первого заголовка кучи
+    let blockHeaderOffset = this.#heapStart;
 
     while (blockHeaderOffset < this.#buffer.byteLength) {
       const unalignedDataOffset = blockHeaderOffset + HEAP_HEADER_BYTE_LENGTH;
@@ -144,14 +150,12 @@ class Memory {
         const remainingSpace = blockSize - totalAllocatedSize;
 
         if (remainingSpace <= HEAP_HEADER_BYTE_LENGTH) {
-          // Забираем блок целиком, сохраняя исходный blockSize в заголовке
           this.#view.setUint32(blockHeaderOffset, blockSize);
           this.#view.setUint8(
             blockHeaderOffset + HEAP_BLOCK_SIZE_BYTE_LENGTH,
             HEAP_STATUS_BUSY,
           );
         } else {
-          // Нарезаем блок
           this.#view.setUint32(blockHeaderOffset, totalAllocatedSize);
           this.#view.setUint8(
             blockHeaderOffset + HEAP_BLOCK_SIZE_BYTE_LENGTH,
@@ -227,82 +231,96 @@ class Memory {
   }
 }
 
-// ============================================
-// Инициализация данных для тестов
-// ============================================
+class Rc {
+  #pointer;
+  #state;
+  #isDisposed = false;
 
-const createBuffer = (size, fillValue) => {
-  const ab = new ArrayBuffer(size);
-  new Uint8Array(ab).fill(fillValue);
-  return ab;
-};
+  constructor(pointer, sharedState = null) {
+    if (!(pointer instanceof Pointer)) {
+      throw new Error("Rc can only wrap a valid Pointer instance");
+    }
+    this.#pointer = pointer;
+    this.#state = sharedState ?? { count: 1 };
+  }
 
-const arrayBuffer1 = createBuffer(16, 1); // 16 байт
-const arrayBuffer2 = createBuffer(32, 2); // 32 байта
-const arrayBuffer3 = createBuffer(16, 3); // 16 байт
-const arrayBuffer4 = createBuffer(128, 4); // 128 байт
+  get count() {
+    return this.#state.count;
+  }
 
-const mem = new Memory(100 * 1024, { stack: 10 * 1024 });
+  change(buffer) {
+    if (this.#isDisposed) throw new Error("Rc pointer is disposed");
+    this.#pointer.change(buffer);
+  }
 
-console.log("--- ТЕСТ СТЕКА ---");
+  deref() {
+    if (this.#isDisposed) throw new Error("Rc pointer is disposed");
+    return this.#pointer.deref();
+  }
 
-const pointer1 = mem.push(arrayBuffer1);
-const pointer2_stack = mem.push(arrayBuffer2);
+  clone() {
+    if (this.#isDisposed) throw new Error("Cannot clone a disposed pointer");
 
-console.log("Deref pointer1 (ожидаем 1):", pointer1.deref());
+    this.#state.count++;
 
-pointer1.change(arrayBuffer3);
-console.log("Deref pointer1 после change (ожидаем 3):", pointer1.deref());
+    return new Rc(this.#pointer, this.#state);
+  }
 
-mem.pop();
-mem.pop();
+  [Symbol.dispose]() {
+    if (this.#isDisposed) return;
 
-try {
-  pointer1.deref();
-  console.log("❌ Ошибка не выброшена: смогли прочитать pointer1 после pop");
-} catch (error) {
-  console.log("✅ Успешно перехвачена ошибка стека:", error.message);
+    this.#isDisposed = true;
+    this.#state.count--;
+
+    console.log(`[Rc] Ссылка удалена. Осталось ссылок: ${this.#state.count}`);
+
+    if (this.#state.count === 0) {
+      console.log("[Rc] Счётчик достиг нуля. Освобождаем физическую память...");
+      this.#pointer.free();
+    }
+  }
 }
 
 // ============================================
-//  Работа с кучей (динамическое управление)
+// Проверка работы RAII и Счетчик Ссылок (Rc)
 // ============================================
 
-console.log("\n--- ТЕСТ КУЧИ ---");
+const memoryManager = new Memory(100 * 1024, { stack: 10 * 1024 });
+const buffer = new ArrayBuffer(128);
+new Uint8Array(buffer).fill(99);
 
-// Выделяем 128 элементов типа Uint8Array (1 элемент = 1 байт, итого 128 байт)
-const pointer2 = mem.alloc(128, Uint8Array);
-pointer2.change(arrayBuffer4);
-console.log("Deref pointer2 (ожидаем 4):", pointer2.deref());
+let rawPointerRef;
 
-// Проверяем выравнивание на различных типах данных (Int32Array = 4 байта, Float64Array = 8 байт)
-const pointer3 = mem.alloc(2, Int32Array); // 2 элемента * 4 байта = 8 байт
-const pointer4 = mem.alloc(1, Int32Array); // 1 элемент * 4 байта = 4 байта
-const pointer5 = mem.alloc(640, Float64Array); // 640 элементов * 8 байт = 5120 байт
+{
+  console.log("--- Выделяем память и оборачиваем в Rc ---");
+  const rawPointer = memoryManager.alloc(128, Uint8Array);
+  rawPointerRef = rawPointer;
 
-try {
-  pointer3.change(arrayBuffer1); // Попытка записать 16 байт в аллоцированные 8 байт
-  console.log("❌ Ошибка не выброшена: записали буфер неверного размера");
-} catch (error) {
-  console.log("✅ Успешно перехвачена ошибка размера:", error.message);
+  using pointer1 = new Rc(rawPointer);
+  pointer1.change(buffer);
+  console.log(`Создан pointer1. Количество ссылок: ${pointer1.count}`); // 1
+
+  {
+    console.log("\n--- Клонируем указатель во вложенном блоке ---");
+    using pointer2 = pointer1.clone();
+    console.log(`Создан pointer2 (клон). Количество ссылок: ${pointer1.count}`); // 2
+    console.log("Данные из pointer2:", pointer2.deref()[0]); // 99
+    console.log("Выходим из вложенного блока...");
+  }
+
+  console.log(
+    `\nВернулись в основной блок. Количество ссылок: ${pointer1.count}`,
+  ); // 1
+  console.log("Физический поинтер все еще валиден?:", rawPointerRef.isValid); // true
+  console.log("Данные из pointer1:", pointer1.deref()[0]); // 99
+  console.log("Выходим из основного блока...");
 }
 
-// Освобождаем память. В консоли должны увидеть логи [Coalescing]
-pointer2.free();
-pointer3.free(); // Тут по цепочке начнет отрабатывать склеивание
-pointer4.free();
-pointer5.free();
+console.log("\n--- Проверка после всех блоков ---");
+console.log("Физический поинтер освобожден?:", !rawPointerRef.isValid); // true
 
 try {
-  pointer2.free();
-  console.log("❌ Ошибка не выброшена: сработал повторный free()");
-} catch (error) {
-  console.log("✅ Успешно перехвачена ошибка Double Free:", error.message);
-}
-
-try {
-  pointer2.deref();
-  console.log("❌ Ошибка не выброшена: прочитали данные после free()");
-} catch (error) {
-  console.log("✅ Успешно перехвачена ошибка Use-After-Free:", error.message);
+  rawPointerRef.deref();
+} catch (e) {
+  console.log("Защита менеджера памяти сработала:", e.message); // Pointer is invalid
 }
