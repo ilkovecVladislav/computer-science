@@ -1,11 +1,9 @@
 import { random, take } from "./task_a";
 
-function filter(iterator, cb) {
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
+function filter(iterable, cb) {
+  const iterator = Iterator.from(iterable);
 
+  return Iterator.from({
     next() {
       while (true) {
         const result = iterator.next();
@@ -19,7 +17,7 @@ function filter(iterator, cb) {
         }
       }
     },
-  };
+  });
 }
 
 const randomInt = random(0, 100);

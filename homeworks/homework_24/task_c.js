@@ -1,12 +1,10 @@
 const randomInt = random(0, 100);
 
-function enumerate(iterator) {
+function enumerate(iterable) {
+  const iterator = Iterator.from(iterable);
   let step = 0;
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
 
+  return Iterator.from({
     next() {
       const result = iterator.next();
 
@@ -16,7 +14,7 @@ function enumerate(iterator) {
 
       return { value: [step++, result.value], done: false };
     },
-  };
+  });
 }
 
 console.log([...take(enumerate(randomInt), 3)]); // [[0, ...], [1, ...], [2, ...]]

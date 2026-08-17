@@ -19,28 +19,29 @@ function runTask(generator, options) {
 
   let workStartTime = performance.now();
 
-  function handleNext() {
-    const stepStart = performance.now();
-    const result = generator.next();
+  function run() {
+    while (true) {
+      const stepStart = performance.now();
+      const result = generator.next();
 
-    if (result.done) {
-      return;
-    }
+      if (result.done) {
+        return;
+      }
 
-    const stepDuration = performance.now() - stepStart;
-    const totalElapsed = performance.now() - workStartTime;
+      const stepDuration = performance.now() - stepStart;
+      const totalElapsed = performance.now() - workStartTime;
 
-    if (totalElapsed >= threshold || stepDuration >= threshold) {
-      setTimeout(() => {
-        workStartTime = performance.now();
-        handleNext();
-      }, delay);
-    } else {
-      handleNext();
+      if (totalElapsed >= threshold || stepDuration >= threshold) {
+        setTimeout(() => {
+          workStartTime = performance.now();
+          run();
+        }, delay);
+        return;
+      }
     }
   }
 
-  handleNext();
+  run();
 }
 
 const gen = task();

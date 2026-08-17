@@ -1,26 +1,19 @@
 export function random(min, max) {
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
-
+  return Iterator.from({
     next() {
       return {
         value: Math.floor(Math.random() * (max - min + 1) + min),
         done: false,
       };
     },
-  };
+  });
 }
 
-export function take(iterator, limit) {
+export function take(iterable, limit) {
+  const iterator = Iterator.from(iterable);
   let currentStep = 0;
 
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
-
+  return Iterator.from({
     next() {
       if (currentStep >= limit) {
         return { value: undefined, done: true };
@@ -35,5 +28,5 @@ export function take(iterator, limit) {
       currentStep++;
       return { value: result.value, done: false };
     },
-  };
+  });
 }

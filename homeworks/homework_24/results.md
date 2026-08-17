@@ -4,28 +4,21 @@
 
 ```javascript
 function random(min, max) {
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
-
+  return Iterator.from({
     next() {
       return {
         value: Math.floor(Math.random() * (max - min + 1) + min),
         done: false,
       };
     },
-  };
+  });
 }
 
-function take(iterator, limit) {
+function take(iterable, limit) {
+  const iterator = Iterator.from(iterable);
   let currentStep = 0;
 
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
-
+  return Iterator.from({
     next() {
       if (currentStep >= limit) {
         return { value: undefined, done: true };
@@ -40,7 +33,7 @@ function take(iterator, limit) {
       currentStep++;
       return { value: result.value, done: false };
     },
-  };
+  });
 }
 
 const randomInt = random(0, 100);
@@ -54,12 +47,10 @@ console.log([...take(randomInt, 15)]);
 Необходимо написать функцию, которая принимает любой Iterable объект и функцию-предикат. Возвращает итератор, который выдаёт только те элементы, которые удовлетворяют предикату.
 
 ```javascript
-function filter(iterator, cb) {
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
+function filter(iterable, cb) {
+  const iterator = Iterator.from(iterable);
 
+  return Iterator.from({
     next() {
       while (true) {
         const result = iterator.next();
@@ -73,7 +64,7 @@ function filter(iterator, cb) {
         }
       }
     },
-  };
+  });
 }
 
 const randomInt = random(0, 100);
@@ -93,13 +84,11 @@ console.log([
 Необходимо написать функцию, которая принимает любой Iterable объект и возвращает итератор по парам `[номер итерации, элемент]`. Нумерация начинается с 0.
 
 ```javascript
-function enumerate(iterator) {
+function enumerate(iterable) {
+  const iterator = Iterator.from(iterable);
   let step = 0;
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
 
+  return Iterator.from({
     next() {
       const result = iterator.next();
 
@@ -109,7 +98,7 @@ function enumerate(iterator) {
 
       return { value: [step++, result.value], done: false };
     },
-  };
+  });
 }
 
 const randomInt = random(0, 100);
@@ -128,11 +117,7 @@ function seq(...rest) {
   let index = 0;
   const iterators = rest.map((item) => Iterator.from(item));
 
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
-
+  return Iterator.from({
     next() {
       while (index < iterators.length) {
         const currentIterator = iterators[index];
@@ -147,7 +132,7 @@ function seq(...rest) {
 
       return { done: true };
     },
-  };
+  });
 }
 
 console.log([...seq([1, 2], new Set([3, 4]), "bla")]); // [1, 2, 3, 4, 'b', 'l', 'a']
@@ -163,11 +148,7 @@ console.log([...seq([1, 2], new Set([3, 4]), "bla")]); // [1, 2, 3, 4, 'b', 'l',
 function mapSeq(iterableArg, adapters) {
   const iterator = Iterator.from(iterableArg);
 
-  return {
-    [Symbol.iterator]() {
-      return this;
-    },
-
+  return Iterator.from({
     next() {
       const result = iterator.next();
 
@@ -176,12 +157,11 @@ function mapSeq(iterableArg, adapters) {
       }
 
       let value = result.value;
-
       adapters.forEach((cb) => (value = cb(value)));
 
       return { done: false, value };
     },
-  };
+  });
 }
 
 console.log([...mapSeq([1, 2, 3], [(el) => el * 2, (el) => el - 1])]); // [1, 3, 5]
